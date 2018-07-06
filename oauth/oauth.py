@@ -23,16 +23,15 @@ THE SOFTWARE.
 """
 
 import cgi
-import urllib
 import time
 import random
 try:
-  import urlparse
+    import urlparse
 except ImportError:
-  from urllib import parse as urlparse
+    from urllib import parse as urlparse
 import hmac
 import binascii
-
+from six import string_types
 
 VERSION = '1.0' # Hi Blaine!
 HTTP_METHOD = 'GET'
@@ -44,17 +43,20 @@ class OAuthError(RuntimeError):
     def __init__(self, message='OAuth error occured.'):
         self.message = message
 
+
 def build_authenticate_header(realm=''):
     """Optional WWW-Authenticate header (401 error)"""
     return {'WWW-Authenticate': 'OAuth realm="%s"' % realm}
 
+
 def escape(s):
     """Escape a URL including any /."""
-    return urllib.quote(s, safe='~')
+    return urlparse.quote(s, safe='~')
+
 
 def _utf8_str(s):
     """Convert unicode to utf-8."""
-    if isinstance(s, unicode):
+    if isinstance(s, string_types):
         return s.encode("utf-8")
     else:
         return str(s)
@@ -90,7 +92,7 @@ class OAuthConsumer(object):
 class OAuthToken(object):
     """OAuthToken is a data type that represents an End User via either an access
     or request token.
-    
+
     key -- the token
     secret -- the token secret
 
@@ -135,7 +137,7 @@ class OAuthToken(object):
         }
         if self.callback_confirmed is not None:
             data['oauth_callback_confirmed'] = self.callback_confirmed
-        return urllib.urlencode(data)
+        return urlparse.urlencode(data)
  
     def from_string(s):
         """ Returns a token from something like:
@@ -163,8 +165,8 @@ class OAuthRequest(object):
         - oauth_consumer_key 
         - oauth_token
         - oauth_signature_method
-        - oauth_signature 
-        - oauth_timestamp 
+        - oauth_signature
+        - oauth_timestamp
         - oauth_nonce
         - oauth_version
         - oauth_verifier
@@ -207,15 +209,15 @@ class OAuthRequest(object):
         auth_header = 'OAuth realm="%s"' % realm
         # Add the oauth parameters.
         if self.parameters:
-            for k, v in self.parameters.iteritems():
+            for k, v in self.parameters.items():
                 if k[:6] == 'oauth_':
-                    auth_header += ', %s="%s"' % (k, escape(str(v)))
-        return {'Authorization': auth_header}
+                    auth_header += ', %s="%s"' % (k, escape(_utf8_str(v)))
+        return {b'Authorization': auth_header.encode('utf-8')}
 
     def to_postdata(self):
         """Serialize as post data for a POST request."""
         return '&'.join(['%s=%s' % (escape(str(k)), escape(str(v))) \
-            for k, v in self.parameters.iteritems()])
+            for k, v in self.parameters.items()])
 
     def to_url(self):
         """Serialize as a URL for a GET request."""
@@ -357,15 +359,15 @@ class OAuthRequest(object):
             # Split key-value.
             param_parts = param.split('=', 1)
             # Remove quotes and unescape the value.
-            params[param_parts[0]] = urllib.unquote(param_parts[1].strip('\"'))
+            params[param_parts[0]] = urlparse.unquote(param_parts[1].strip('\"'))
         return params
     _split_header = staticmethod(_split_header)
 
     def _split_url_string(param_str):
         """Turn URL string into parameters."""
         parameters = cgi.parse_qs(param_str, keep_blank_values=False)
-        for k, v in parameters.iteritems():
-            parameters[k] = urllib.unquote(v[0])
+        for k, v in parameters.items():
+            parameters[k] = urlparse.unquote(v[0])
         return parameters
     _split_url_string = staticmethod(_split_url_string)
 
@@ -609,7 +611,7 @@ class OAuthSignatureMethod_HMAC_SHA1(OAuthSignatureMethod):
 
     def get_name(self):
         return 'HMAC-SHA1'
-        
+
     def build_signature_base_string(self, oauth_request, consumer, token):
         sig = (
             escape(oauth_request.get_normalized_http_method()),
@@ -626,18 +628,14 @@ class OAuthSignatureMethod_HMAC_SHA1(OAuthSignatureMethod):
     def build_signature(self, oauth_request, consumer, token):
         """Builds the base signature string."""
         key, raw = self.build_signature_base_string(oauth_request, consumer,
-            token)
-
-        # HMAC object.
-        try:
-            import hashlib # 2.5
-            hashed = hmac.new(key, raw, hashlib.sha1)
-        except ImportError:
-            import sha # Deprecated
-            hashed = hmac.new(key, raw, sha)
+                                                    token)
+        import hashlib  # 2.5
+        hashed = hmac.new(key.encode('utf-8'), raw.encode('utf-8'),
+                          hashlib.sha1)
 
         # Calculate the digest base 64.
-        return binascii.b2a_base64(hashed.digest())[:-1]
+        res = binascii.b2a_base64(hashed.digest())[:-1]
+        return res.decode('ascii')
 
 
 class OAuthSignatureMethod_PLAINTEXT(OAuthSignatureMethod):
